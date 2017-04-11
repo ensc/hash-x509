@@ -1,0 +1,80 @@
+#! /bin/bash
+
+H=${1:-../hash-x509}
+CA=${2:-ca}
+
+set -e
+
+T=`mktemp -t -d hash-x509.XXXXXX`
+trap "rm -rf $T" EXIT
+
+assert_num_files() {
+    local exp=$1
+    local dir=$2
+    local cnt=0
+    local f
+
+    for f in "$dir"/*; do
+        let ++cnt
+    done
+
+    test $cnt -eq $exp || err "unexpected number of files"
+}
+
+t1() {
+    ## install first two crl lists
+    $H "$1" "$CA/ca0/0.crl" "$CA/ca0/1.crl"
+
+    assert_num_files 2 "$1"
+
+    cmp "$1/"*.r0 "$CA/ca0/1.crl" || err "bad cert #0"
+    cmp "$1/"*.r1 "$CA/ca0/0.crl" || err "bad cert #1"
+
+    ## again, but in reverse order
+    rm -f "$1"/*
+    $H "$1" "$CA/ca0/1.crl" "$CA/ca0/0.crl"
+
+    assert_num_files 2 "$1"
+
+    cmp "$1/"*.r0 "$CA/ca0/1.crl" || err "bad cert #0"
+    cmp "$1/"*.r1 "$CA/ca0/0.crl" || err "bad cert #1"
+
+    ## and again
+    $H "$1" "$CA/ca0/0.crl" "$CA/ca0/1.crl"
+
+    assert_num_files 2 "$1"
+
+    cmp "$1/"*.r0 "$CA/ca0/1.crl" || err "bad cert #0"
+    cmp "$1/"*.r1 "$CA/ca0/0.crl" || err "bad cert #1"
+    
+    $H "$1" "$CA/ca0/2.crl"
+
+    assert_num_files 1 "$1"
+
+    cmp "$1/"*.r2 "$CA/ca0/2.crl" || err "bad cert #2"
+
+
+    ## and again
+    $H "$1" "$CA/ca0/0.crl" "$CA/ca0/1.crl" "$CA/ca0/2.crl"
+
+    assert_num_files 3 "$1"
+    cmp "$1/"*.r2 "$CA/ca0/2.crl" || err "bad cert #0"
+    cmp "$1/"*.r1 "$CA/ca0/0.crl" || err "bad cert #1"
+    cmp "$1/"*.r0 "$CA/ca0/1.crl" || err "bad cert #2"
+}
+
+run() {
+    local d=$T/$1
+    local cnt=0
+    local f
+    
+    mkdir -p "$d"
+    "$1" "$d"
+
+    rm -rf "$d"
+    
+}
+
+shopt -s nullglob
+
+run t1
