@@ -30,22 +30,22 @@
 
 #define MAX_DIR_IDX	(LONG_MAX)
 
-struct x509_crt {
-	X509		*x509;
+struct dir_object {
 	unsigned int	dir_idx;
 	char const	*fname;
 
-	/* crt is in new crt bundle too */
+	/* object is in the bundle too */
 	bool		is_new;
 };
 
-struct x509_crl {
-	X509_CRL	*crl;
-	unsigned int	dir_idx;
-	char const	*fname;
+struct x509_crt {
+	struct dir_object	o;
+	X509			*x509;
+};
 
-	/* crl is in new crl list too */
-	bool		is_new;
+struct x509_crl {
+	struct dir_object	o;
+	X509_CRL		*crl;
 };
 
 struct x509_hash {
@@ -100,23 +100,23 @@ static int cmp_crl_crl(void const *a_, void const *b_)
 		d = 0;
 	} else {
 		if (day < 0 || sec < 0)
-			d = -1;
+			d = +1;
 		else if (day == 0 && sec == 0)
 			d =  0;
 		else
-			d = +1;
+			d = -1;
 	}
 
 	if (d != 0)
 		return d;
 	else
-		return X509_CRL_cmp(b->crl, a->crl);
+		return X509_CRL_match(b->crl, a->crl);
 }
 
 static int cmp_x509_x509(void const *a_, void const *b_)
 {
-	struct x509_crt const		*a = a_;
-	struct x509_crt const		*b = b_;
+	struct x509_crt const	*a = a_;
+	struct x509_crt const	*b = b_;
 
 	ASN1_INTEGER const	*ser_a = X509_get_serialNumber((X509 *)(a->x509));
 	ASN1_INTEGER const	*ser_b = X509_get_serialNumber((X509 *)(b->x509));
@@ -144,7 +144,7 @@ static int cmp_x509_crl(void const *crl_, void const *crl_obj_)
 	else if (b == NULL)
 		return +1;
 	else
-		return X509_CRL_cmp(a, b->crl);
+		return X509_CRL_match(a, b->crl);
 }
 
 static int cmp_x509_crt(void const *crt_, void const *crt_obj_)
@@ -203,8 +203,10 @@ static struct x509_crl *new_crl(struct x509_hash *hash)
 
 	*res = (struct x509_crl) {
 		.crl = NULL,
-		.fname = NULL,
-		.is_new = false,
+		.o = {
+			.fname = NULL,
+			.is_new = false,
+		},
 	};
 
 	return res;
@@ -225,20 +227,19 @@ static struct x509_crt *new_crt(struct x509_hash *hash)
 
 	*res = (struct x509_crt) {
 		.x509 = NULL,
-		.fname = NULL,
-		.is_new = false,
+		.o = {
+			.fname = NULL,
+			.is_new = false,
+		},
 	};
 
 	return res;
 }
 
-static struct x509_crl *add_crl(struct x509_objects *objs, X509_CRL *crl,
-				bool is_new)
+static struct x509_hash *find_hash(struct x509_objects *objs,
+				   unsigned long hash)
 {
-	X509_NAME		*issuer = X509_CRL_get_issuer(crl);
-	unsigned long		hash = X509_NAME_hash(issuer);
 	struct x509_hash	*h;
-	struct x509_crl		*crl_obj;
 
 	h = lfind(&hash, objs->list, &objs->num, sizeof objs->list[0], cmp_hash);
 	if (!h) {
@@ -249,12 +250,27 @@ static struct x509_crl *add_crl(struct x509_objects *objs, X509_CRL *crl,
 		h->hash = hash;
 	}
 
+	return h;
+}
+
+static struct x509_crl *add_crl(struct x509_objects *objs, X509_CRL *crl,
+				bool is_new)
+{
+	X509_NAME		*issuer = X509_CRL_get_issuer(crl);
+	unsigned long		hash = X509_NAME_hash(issuer);
+	struct x509_hash	*h;
+	struct x509_crl		*crl_obj;
+
+	h = find_hash(objs, hash);
+	if (!h)
+		return NULL;
+
 	if (is_new) {
 		crl_obj = lfind(crl, h->crls, &h->num_crls,
 				sizeof h->crls[0], cmp_x509_crl);
 
 		if (crl_obj) {
-			crl_obj->is_new = true;
+			crl_obj->o.is_new = true;
 			return crl_obj;
 		}
 
@@ -266,7 +282,7 @@ static struct x509_crl *add_crl(struct x509_objects *objs, X509_CRL *crl,
 		return NULL;
 
 	crl_obj->crl = X509_CRL_dup(crl);
-	crl_obj->is_new = is_new;
+	crl_obj->o.is_new = is_new;
 
 	return crl_obj;
 }
@@ -278,21 +294,16 @@ static struct x509_crt *add_crt(struct x509_objects *objs, X509 *crt,
 	struct x509_hash	*h;
 	struct x509_crt		*crt_obj;
 
-	h = lfind(&hash, objs->list, &objs->num, sizeof objs->list[0], cmp_hash);
-	if (!h) {
-		h = new_hash(objs);
-		if (!h)
-			return NULL;
-
-		h->hash = hash;
-	}
+	h = find_hash(objs, hash);
+	if (!h)
+		return NULL;
 
 	if (is_new) {
 		crt_obj = lfind(crt, h->crts, &h->num_crts,
 				sizeof h->crts[0], cmp_x509_crt);
 
 		if (crt_obj) {
-			crt_obj->is_new = true;
+			crt_obj->o.is_new = true;
 			return crt_obj;
 		}
 
@@ -304,16 +315,13 @@ static struct x509_crt *add_crt(struct x509_objects *objs, X509 *crt,
 		return NULL;
 
 	crt_obj->x509 = X509_dup(crt);
-	crt_obj->is_new = is_new;
+	crt_obj->o.is_new = is_new;
 
 	return crt_obj;
 }
 
-static bool read_crl(FILE *f, struct x509_objects *objs,
-		     char const *fname, char const *idx_str)
+static bool str_to_idx(unsigned long *res, char const *idx_str)
 {
-	X509_CRL	*crl;
-	struct x509_crl	*crl_obj;
 	char		*err;
 	unsigned long	idx;
 
@@ -323,6 +331,32 @@ static bool read_crl(FILE *f, struct x509_objects *objs,
 		return false;
 
 	if (idx > (unsigned long)MAX_DIR_IDX)
+		return false;
+
+	*res = idx;
+
+	return true;
+}
+
+static void dir_object_init(struct dir_object *o, char const *fname,
+			    unsigned long idx)
+{
+	o->dir_idx = idx;
+	o->fname   = strdup(fname);
+
+	if (!o->fname)
+		/* TODO: improve error handling! */
+		abort();
+}
+
+static bool read_crl(FILE *f, struct x509_objects *objs,
+		     char const *fname, char const *idx_str)
+{
+	X509_CRL	*crl;
+	struct x509_crl	*crl_obj;
+	unsigned long	idx;
+
+	if (!str_to_idx(&idx, idx_str))
 		return false;
 
 	crl = PEM_read_X509_CRL(f, NULL, NULL, NULL);
@@ -335,12 +369,7 @@ static bool read_crl(FILE *f, struct x509_objects *objs,
 	if (!crl_obj)
 		return false;
 
-	crl_obj->dir_idx = idx;
-	crl_obj->fname = strdup(fname);
-
-	if (!crl_obj->fname)
-		/* TODO: improve error handling! */
-		abort();
+	dir_object_init(&crl_obj->o, fname, idx);
 
 	return true;
 }
@@ -350,15 +379,9 @@ static bool read_crt(FILE *f, struct x509_objects *objs,
 {
 	X509		*crt;
 	struct x509_crt	*crt_obj;
-	char		*err;
 	unsigned long	idx;
 
-	idx = strtoul(idx_str, &err, 10);
-	if (*err || err == idx_str)
-		/* index not a number */
-		return false;
-
-	if (idx > (unsigned long)MAX_DIR_IDX)
+	if (!str_to_idx(&idx, idx_str))
 		return false;
 
 	crt = PEM_read_X509(f, NULL, NULL, NULL);
@@ -371,11 +394,7 @@ static bool read_crt(FILE *f, struct x509_objects *objs,
 	if (!crt_obj)
 		return false;
 
-	crt_obj->dir_idx = idx;
-	crt_obj->fname = strdup(fname);
-	if (!crt_obj->fname)
-		/* TODO: improve error handling! */
-		abort();
+	dir_object_init(&crt_obj->o, fname, idx);
 
 	return true;
 }
@@ -384,6 +403,7 @@ static bool read_dir(int dir_fd, struct x509_objects *objs)
 {
 	int	new_fd = dup(dir_fd);	/* allow closedir() */
 	DIR	*dir = fdopendir(new_fd);
+	bool	res = false;
 
 	if (!dir) {
 		perror("fdopen()");
@@ -401,7 +421,7 @@ static bool read_dir(int dir_fd, struct x509_objects *objs)
 		entry = readdir(dir);
 		if (!entry && errno != 0) {
 			perror("readdir()");
-			goto err;
+			goto out;
 		}
 		if (!entry)
 			break;
@@ -428,12 +448,11 @@ static bool read_dir(int dir_fd, struct x509_objects *objs)
 		fclose(f);
 	}
 
-	closedir(dir);
-	return true;
+	res = true;
 
-err:
+out:
 	closedir(dir);
-	return false;
+	return res;
 }
 
 static unsigned int get_next_crt_idx(struct x509_hash const *hash)
@@ -444,9 +463,9 @@ static unsigned int get_next_crt_idx(struct x509_hash const *hash)
 		bool		found = false;
 
 		for (size_t i = 0; i < hash->num_crts; ++i) {
-			struct x509_crt const	*crt = &hash->crts[i];
+			struct dir_object const	*o = &hash->crts[i].o;
 
-			if (crt->fname && crt->dir_idx == res) {
+			if (o->fname && o->dir_idx == res) {
 				found = true;
 				break;
 			}
@@ -469,9 +488,9 @@ static unsigned int get_next_crl_idx(struct x509_hash const *hash)
 		bool		found = false;
 
 		for (size_t i = 0; i < hash->num_crls; ++i) {
-			struct x509_crl const	*crl = &hash->crls[i];
+			struct dir_object const	*o = &hash->crls[i].o;
 
-			if (crl->fname && crl->dir_idx == res) {
+			if (o->fname && o->dir_idx == res) {
 				found = true;
 				break;
 			}
@@ -486,27 +505,50 @@ static unsigned int get_next_crl_idx(struct x509_hash const *hash)
 	return res;
 }
 
-static bool emit_new_crt(int dir_fd, struct x509_crt const *crt,
-			 struct x509_hash const *hash, unsigned int *idx)
+static FILE *emit_create_file(int dir_fd, char const *fmt,
+			      struct x509_hash const *hash,
+			      unsigned int idx)
 {
-	char	fname_buf[sizeof hash->hash * 2 + sizeof(".") +
-			  sizeof *idx * 3];
+	char	fname_buf[sizeof hash->hash * 2 + sizeof(".r") +
+			  sizeof idx * 3];
 	int	fd;
 	FILE	*f;
+	size_t	l;
 
-	if (!crt->is_new || crt->fname)
-		return true;
-
-	sprintf(fname_buf, "%08" PRIx32 ".%u", hash->hash, *idx);
+	l = snprintf(fname_buf, sizeof fname_buf, fmt, hash->hash, idx);
+	if (l == sizeof fname_buf)
+		/* 'fmt' is expected to not override the buffer */
+		abort();
 
 	fd = openat(dir_fd, fname_buf, O_WRONLY | O_CREAT | O_CLOEXEC | O_EXCL, 0644);
 	if (fd < 0) {
 		fprintf(stderr, "openat(..., %s): %s\n", fname_buf,
 			strerror(errno));
-		return false;
+		return NULL;
 	}
 
 	f = fdopen(fd, "w");
+	if (!f) {
+		fprintf(stderr, "fdopen(<%s>): %s", fname_buf,
+			strerror(errno));
+		close(fd);
+	}
+
+	return f;
+}
+
+static bool emit_new_crt(int dir_fd, struct x509_crt const *crt,
+			 struct x509_hash const *hash, unsigned int *idx)
+{
+	FILE	*f;
+
+	if (!crt->o.is_new || crt->o.fname)
+		return true;
+
+	f = emit_create_file(dir_fd, "%08" PRIx32 ".%u", hash, *idx);
+	if (!f)
+		return false;
+
 	PEM_write_X509(f, crt->x509);
 	fclose(f);
 
@@ -515,65 +557,39 @@ static bool emit_new_crt(int dir_fd, struct x509_crt const *crt,
 	return true;
 }
 
-static bool remove_old_crt(int dir_fd, struct x509_crt const *crt)
-{
-	int	rc;
-
-	if (crt->is_new || !crt->fname)
-		return true;
-
-	rc = unlinkat(dir_fd, crt->fname, 0);
-	if (rc < 0) {
-		fprintf(stderr, "unlinkat(... %s): %s\n", crt->fname,
-			strerror(errno));
-		return false;
-	}
-
-	return true;
-}
-
-static bool remove_old_crl(int dir_fd, struct x509_crl const *crl)
-{
-	int	rc;
-
-	if (crl->is_new || !crl->fname)
-		return true;
-
-	rc = unlinkat(dir_fd, crl->fname, 0);
-	if (rc < 0) {
-		fprintf(stderr, "unlinkat(... %s): %s\n", crl->fname,
-			strerror(errno));
-		return false;
-	}
-
-	return true;
-}
-
 static bool emit_new_crl(int dir_fd, struct x509_crl const *crl,
 			 struct x509_hash const *hash, unsigned int *idx)
 {
-	char	fname_buf[sizeof hash->hash * 2 + sizeof(".") +
-			  sizeof *idx * 3];
-	int	fd;
 	FILE	*f;
 
-	if (!crl->is_new || crl->fname)
+	if (!crl->o.is_new || crl->o.fname)
 		return true;
 
-	sprintf(fname_buf, "%08" PRIx32 ".r%u", hash->hash, *idx);
-
-	fd = openat(dir_fd, fname_buf, O_WRONLY | O_CREAT | O_CLOEXEC | O_EXCL, 0644);
-	if (fd < 0) {
-		fprintf(stderr, "openat(..., %s): %s\n", fname_buf,
-			strerror(errno));
+	f = emit_create_file(dir_fd, "%08" PRIx32 ".r%u", hash, *idx);
+	if (!f)
 		return false;
-	}
 
-	f = fdopen(fd, "w");
 	PEM_write_X509_CRL(f, crl->crl);
 	fclose(f);
 
 	*idx += 1;
+
+	return true;
+}
+
+static bool remove_old_object(int dir_fd, struct dir_object const *o)
+{
+	int	rc;
+
+	if (o->is_new || !o->fname)
+		return true;
+
+	rc = unlinkat(dir_fd, o->fname, 0);
+	if (rc < 0) {
+		fprintf(stderr, "unlinkat(... %s): %s\n", o->fname,
+			strerror(errno));
+		return false;
+	}
 
 	return true;
 }
@@ -591,10 +607,10 @@ static bool emit_object(int dir_fd, struct x509_hash const *hash)
 		emit_new_crl(dir_fd, &hash->crls[i], hash, &next_idx);
 
 	for (size_t i = 0; i < hash->num_crls; ++i)
-		remove_old_crl(dir_fd, &hash->crls[i]);
+		remove_old_object(dir_fd, &hash->crls[i].o);
 
 	for (size_t i = 0; i < hash->num_crts; ++i)
-		remove_old_crt(dir_fd, &hash->crts[i]);
+		remove_old_object(dir_fd, &hash->crts[i].o);
 
 	return true;
 }
