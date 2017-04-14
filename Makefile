@@ -18,7 +18,7 @@ LIBS_openssl = $(shell ${PKG_CONFIG} --libs libcrypto)
 CFLAGS = -Wall -W -Werror -D_FORTIFY_SOURCE=2 -O2
 LDFLAGS = -Wl,-as-needed
 
-AM_CFLAGS = ${CFLAGS_openssl} -std=gnu11
+AM_CFLAGS = ${CFLAGS_openssl} -std=gnu99
 LIBS = ${LIBS_openssl}
 
 bin_PROGRAMS = hash-x509
