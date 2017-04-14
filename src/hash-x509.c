@@ -788,10 +788,40 @@ static void sort_objects(struct x509_hash *hash)
 	qsort(hash->crls, hash->num_crls, sizeof hash->crls[0], cmp_crl_crl);
 }
 
+static void test_asn1_time(char const *a, char const *b, int cmp)
+{
+	ASN1_TIME	*a_tm = ASN1_TIME_new();
+	ASN1_TIME	*b_tm = ASN1_TIME_new();;
+	int		pday;
+	int		psec;
+
+	assert(ASN1_TIME_set_string(a_tm, a));
+	assert(ASN1_TIME_set_string(b_tm, b));
+	assert(ASN1_TIME_diff(&pday, &psec, a_tm, b_tm));
+
+	if (cmp < 0)
+		assert((pday < 0 && psec <= 0) ||
+		       (pday == 0 && psec < 0));
+	else if (cmp > 0)
+		assert((pday > 0 && psec >= 0) ||
+		       (pday == 0 && psec > 0));
+	else
+		assert(pday == 0 && psec == 0);
+
+
+	ASN1_TIME_free(a_tm);
+	ASN1_TIME_free(b_tm);
+}
+
 static void test(void)
 {
 	if (!is_test())
 		return;
+
+	test_asn1_time("161201000000Z", "20161201000000Z", 0);
+	test_asn1_time("161201000000Z", "20161201000001Z", +1);
+	test_asn1_time("161201000001Z", "20161201000000Z", -1);
+	test_asn1_time("20161201010000Z", "20161201000000+0100",  0);
 }
 
 int main(int argc, char *argv[])
