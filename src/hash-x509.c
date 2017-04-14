@@ -71,6 +71,164 @@ struct x509_objects {
 	size_t			num;
 };
 
+#if OPENSSL_VERSION_NUMBER < 0x10002000L
+static unsigned int bcd_to_uint(unsigned char const **s, size_t *s_len,
+				size_t cnt, bool *err)
+{
+	unsigned int	res = 0;
+
+	if (*err)
+		return res;
+
+	if (*s_len < cnt) {
+		*err = true;
+		return res;
+	}
+
+	for (size_t i = 0; i < cnt; ++i) {
+		unsigned char	c = (*s)[i];
+
+		if (c < '0' || c > '9') {
+			*err = true;
+			return res;
+		}
+
+		res *= 10;
+		res += c - '0';
+	}
+
+	*s += cnt;
+	*s_len -= cnt;
+	return res;
+}
+
+static bool asn1_time_to_tm(struct tm *res_tm, ASN1_TIME const *atm)
+{
+	ASN1_GENERALIZEDTIME		*gtm = NULL;
+	struct tm			tm;
+	unsigned char const		*s;
+	size_t				l;
+	bool				err = false;
+	signed int			offset;
+
+	if (!ASN1_TIME_to_generalizedtime((ASN1_TIME *)atm, &gtm))
+		return false;
+
+	s = gtm->data;
+	l = gtm->length;
+
+	memset(&tm, 0, sizeof tm);
+	tm.tm_year = bcd_to_uint(&s, &l, 4, &err);
+	tm.tm_mon  = bcd_to_uint(&s, &l, 2, &err);
+	tm.tm_mday = bcd_to_uint(&s, &l, 2, &err);
+	tm.tm_hour = bcd_to_uint(&s, &l, 2, &err);
+	tm.tm_min  = bcd_to_uint(&s, &l, 2, &err);
+	tm.tm_sec  = bcd_to_uint(&s, &l, 2, &err);
+
+	if (err)
+		goto err;
+
+	if (tm.tm_year < 1900 ||
+	    tm.tm_mon  < 1 || tm.tm_mon > 12 ||
+	    tm.tm_mday < 1 || tm.tm_mday > 31 ||
+	    tm.tm_hour > 23 ||
+	    tm.tm_min  > 59 ||
+	    tm.tm_sec  > 61)
+		goto err;
+
+	tm.tm_year -= 1900;
+	tm.tm_mon  -= 1;
+
+	if (l > 0 && *s == '.') {
+		while (l > 0 && (s[1] >= '0' && s[1] <= '9')) {
+			++s;
+			--l;
+		}
+	}
+
+	switch (l > 0 ? s[0] : '\0') {
+	case '\0':
+		offset = 0;
+		break;
+	case 'Z':
+		++s;
+		--l;
+		offset = 0;
+		break;
+
+	case '-':
+		++s;
+		--l;
+		offset = (bcd_to_uint(&s, &l, 2, &err) * 60 +
+			  bcd_to_uint(&s, &l, 2, &err));
+		offset = -offset;
+		break;
+
+	case '+':
+		++s;
+		--l;
+		offset = (bcd_to_uint(&s, &l, 2, &err) * 60 +
+			  bcd_to_uint(&s, &l, 2, &err));
+		break;
+
+	default:
+		err = true;
+		break;
+	}
+
+	if (err)
+		goto err;
+
+	if (l != 0)
+		goto err;
+
+	if (offset <= -24 * 60 || offset >= 24 * 60)
+		goto err;
+
+	tm.tm_sec += offset * 60;
+
+	*res_tm = tm;
+
+	ASN1_GENERALIZEDTIME_free(gtm);
+	return true;
+
+err:
+	ASN1_GENERALIZEDTIME_free(gtm);
+	return false;
+}
+
+static int ASN1_TIME_diff(int *pday, int *psec,
+			  const ASN1_TIME *from, const ASN1_TIME *to)
+{
+	struct tm	a;
+	struct tm	b;
+	bool		a_ok = asn1_time_to_tm(&a, from);
+	bool		b_ok = asn1_time_to_tm(&b, to);
+
+	if (!a_ok && !b_ok)
+		*pday = *psec = 0;
+	else if (!a_ok)
+		*pday = *psec = -1;
+	else if (!b_ok)
+		*pday = *psec = +1;
+	else {
+		time_t	a_tm = timegm(&a);
+		time_t	b_tm = timegm(&b);
+		time_t	delta = (a_tm < b_tm) ? (b_tm - a_tm) : (a_tm - b_tm);
+
+		*pday = delta / (3600 * 24);
+		*psec = delta % (3600 * 24);
+
+		if (a_tm > b_tm) {
+			*pday = -*pday;
+			*psec = -*psec;
+		}
+	}
+
+	return 1;
+}
+#endif
+
 static int cmp_hash(void const *numeric_hash_, void const *hash_)
 {
 	unsigned long const		*a = numeric_hash_;
