@@ -71,6 +71,15 @@ struct x509_objects {
 	size_t			num;
 };
 
+inline static bool is_test(void)
+{
+#ifdef TESTSUITE
+	return true;
+#else
+	return false;
+#endif
+}
+
 #if OPENSSL_VERSION_NUMBER < 0x10002000L
 static unsigned int bcd_to_uint(unsigned char const **s, size_t *s_len,
 				size_t cnt, bool *err)
@@ -779,6 +788,12 @@ static void sort_objects(struct x509_hash *hash)
 	qsort(hash->crls, hash->num_crls, sizeof hash->crls[0], cmp_crl_crl);
 }
 
+static void test(void)
+{
+	if (!is_test())
+		return;
+}
+
 int main(int argc, char *argv[])
 {
 	char const	*outdir = argv[1];
@@ -791,6 +806,8 @@ int main(int argc, char *argv[])
 		.list	= NULL,
 		.num	= 0,
 	};
+
+	test();
 
 	if (!lookup) {
 		fprintf(stderr, "failed to construct x509 lookup\n");
