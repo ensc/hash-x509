@@ -63,6 +63,19 @@ t1() {
     cmp "$1/"*.r0 "$CA/ca0/1.crl" || err "bad cert #2"
 }
 
+t2() {
+    $H "$1" "$CA/ca0/top.crt" "$CA/ca0/l1.crt" "$CA/ca0/l2.crt"
+
+    assert_num_files 3 "$1"
+
+    ####
+    rm -f "$1/*"
+    $H "$1" "$CA/ca0/"{top,l1,l2,l1-dup}.crt
+
+    assert_num_files 4 "$1"
+
+}
+
 run() {
     local d=$T/$1
     local cnt=0
@@ -78,3 +91,4 @@ run() {
 shopt -s nullglob
 
 run t1
+run t2
