@@ -568,12 +568,20 @@ static bool read_crt(FILE *f, struct x509_objects *objs,
 
 static bool read_dir(int dir_fd, struct x509_objects *objs)
 {
-	int	new_fd = dup(dir_fd);	/* allow closedir() */
-	DIR	*dir = fdopendir(new_fd);
+	int	new_fd;
+	DIR	*dir;
 	bool	res = false;
 
+	new_fd = dup(dir_fd);	/* allow closedir() */
+	if (new_fd < 0) {
+		perror("dupfd()");
+		return false;
+	}
+
+	dir = fdopendir(new_fd);
 	if (!dir) {
 		perror("fdopen()");
+		close(new_fd);
 		return false;
 	}
 
