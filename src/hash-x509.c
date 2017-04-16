@@ -308,7 +308,7 @@ static int cmp_x509_crl(void const *crl_, void const *crl_obj_)
 		return 0;
 	else if (a == NULL)
 		return -1;
-	else if (b == NULL)
+	else if (b->crl == NULL)
 		return +1;
 	else
 		return X509_CRL_match(a, b->crl);
@@ -325,7 +325,7 @@ static int cmp_x509_crt(void const *crt_, void const *crt_obj_)
 		return 0;
 	else if (a == NULL)
 		return -1;
-	else if (b == NULL)
+	else if (b->x509 == NULL)
 		return +1;
 	else
 		return X509_cmp(a, b->x509);
