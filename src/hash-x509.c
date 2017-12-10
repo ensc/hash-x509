@@ -28,6 +28,16 @@
 #include <openssl/x509_vfy.h>
 #include <openssl/pem.h>
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#  define X509_CRL_get0_lastUpdate(_c)	X509_CRL_get_lastUpdate(_c)
+#  define X509_STORE_get0_objects(_s)	((_s)->objs)
+#  define X509_OBJECT_get_type(_o)	((_o)->type)
+#  define X509_OBJECT_get0_X509(_o)	((_o)->data.x509)
+#  define X509_OBJECT_get0_X509_CRL(_o)	((_o)->data.crl)
+
+typedef int	X509_LOOKUP_TYPE;
+#endif
+
 #define MAX_DIR_IDX	(LONG_MAX)
 
 struct dir_object {
@@ -256,8 +266,8 @@ static int cmp_crl_crl(void const *a_, void const *b_)
 	struct x509_crl const		*a = a_;
 	struct x509_crl const		*b = b_;
 
-	ASN1_TIME const	*tm_a = X509_CRL_get_lastUpdate(a->crl);
-	ASN1_TIME const	*tm_b = X509_CRL_get_lastUpdate(b->crl);
+	ASN1_TIME const	*tm_a = X509_CRL_get0_lastUpdate(a->crl);
+	ASN1_TIME const	*tm_b = X509_CRL_get0_lastUpdate(b->crl);
 
 	int		day;
 	int		sec;
@@ -837,6 +847,7 @@ int main(int argc, char *argv[])
 	char const	*outdir = argv[1];
 	X509_STORE	*store = X509_STORE_new();
 	X509_LOOKUP	*lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
+	STACK_OF(X509_OBJECT)	*store_objects;
 	int		dir_fd;
 	int		lock_fd;
 	int		rc;
@@ -883,16 +894,18 @@ int main(int argc, char *argv[])
 	if (!read_dir(dir_fd, &objects))
 		return EXIT_FAILURE;
 
-	for (int i = 0; i < sk_X509_OBJECT_num(store->objs); ++i) {
-		X509_OBJECT	*o = sk_X509_OBJECT_value(store->objs, i);
+	store_objects = X509_STORE_get0_objects(store);
+	for (int i = 0; i < sk_X509_OBJECT_num(store_objects); ++i) {
+		X509_OBJECT	*o = sk_X509_OBJECT_value(store_objects, i);
+		X509_LOOKUP_TYPE type = X509_OBJECT_get_type(o);
 
-		switch (o->type) {
+		switch (type) {
 		case X509_LU_X509:
-			add_crt(&objects, o->data.x509, true);
+			add_crt(&objects, X509_OBJECT_get0_X509(o), true);
 			break;
 
 		case X509_LU_CRL:
-			add_crl(&objects, o->data.crl, true);
+			add_crl(&objects, X509_OBJECT_get0_X509_CRL(o), true);
 			break;
 
 		default:
