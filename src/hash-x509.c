@@ -313,6 +313,7 @@ static int cmp_x509_crl(void const *crl_, void const *crl_obj_)
 	struct x509_crl const	*b = crl_obj_;
 
 	assert(a != NULL);
+	assert(b != NULL);
 
 	if (a == b->crl)
 		return 0;
@@ -330,6 +331,7 @@ static int cmp_x509_crt(void const *crt_, void const *crt_obj_)
 	struct x509_crt const	*b = crt_obj_;
 
 	assert(a != NULL);
+	assert(b != NULL);
 
 	if (a == b->x509)
 		return 0;
@@ -418,14 +420,22 @@ static struct x509_hash *find_hash(struct x509_objects *objs,
 {
 	struct x509_hash	*h;
 
+	assert(objs->num == 0 || objs->list != NULL);
+
 	h = lfind(&hash, objs->list, &objs->num, sizeof objs->list[0], cmp_hash);
 	if (!h) {
 		h = new_hash(objs);
 		if (!h)
-			return NULL;
+			goto out;
 
 		h->hash = hash;
 	}
+
+	assert(objs->num > 0);
+	assert(objs->list != NULL);
+
+out:
+	assert(objs->num == 0 || objs->list != NULL);
 
 	return h;
 }
@@ -582,6 +592,8 @@ static bool read_dir(int dir_fd, struct x509_objects *objs)
 	DIR	*dir;
 	bool	res = false;
 
+	assert(objs->num == 0 || objs->list != NULL);
+
 	new_fd = dup(dir_fd);	/* allow closedir() */
 	if (new_fd < 0) {
 		perror("dupfd()");
@@ -631,12 +643,17 @@ static bool read_dir(int dir_fd, struct x509_objects *objs)
 			read_crt(f, objs, fname, fname + 9);
 		}
 		fclose(f);
+
+		assert(objs->num == 0 || objs->list != NULL);
 	}
 
 	res = true;
 
 out:
 	closedir(dir);
+
+	assert(objs->num == 0 || objs->list != NULL);
+
 	return res;
 }
 
