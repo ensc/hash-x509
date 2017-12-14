@@ -5,8 +5,8 @@ abs_srcdir = $(abspath ${srcdir})
 
 VPATH = ${abs_srcdir}
 
-check:	.stamps/ca run-test
-	$(filter %/run-test,$^)
+check:	run-test .stamps/ca FORCE
+	bash $<
 
 .stamps:
 	mkdir -p $@
