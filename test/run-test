@@ -28,7 +28,7 @@ assert_num_files() {
 
 t1() {
     ## install first two crl lists
-    $H "$1" "$CA/ca0/0.crl" "$CA/ca0/1.crl"
+    $H -R "$1" "$CA/ca0/0.crl" "$CA/ca0/1.crl"
 
     assert_num_files 2 "$1"
 
@@ -37,7 +37,7 @@ t1() {
 
     ## again, but in reverse order
     rm -f "$1"/*
-    $H "$1" "$CA/ca0/1.crl" "$CA/ca0/0.crl"
+    $H -R "$1" "$CA/ca0/1.crl" "$CA/ca0/0.crl"
 
     assert_num_files 2 "$1"
 
@@ -45,14 +45,14 @@ t1() {
     cmp "$1/"*.r1 "$CA/ca0/0.crl" || err "bad cert #1"
 
     ## and again
-    $H "$1" "$CA/ca0/0.crl" "$CA/ca0/1.crl"
+    $H -R "$1" "$CA/ca0/0.crl" "$CA/ca0/1.crl"
 
     assert_num_files 2 "$1"
 
     cmp "$1/"*.r0 "$CA/ca0/1.crl" || err "bad cert #0"
     cmp "$1/"*.r1 "$CA/ca0/0.crl" || err "bad cert #1"
     
-    $H "$1" "$CA/ca0/2.crl"
+    $H -R "$1" "$CA/ca0/2.crl"
 
     assert_num_files 1 "$1"
 
@@ -60,7 +60,7 @@ t1() {
 
 
     ## and again
-    $H "$1" "$CA/ca0/0.crl" "$CA/ca0/1.crl" "$CA/ca0/2.crl"
+    $H -R "$1" "$CA/ca0/0.crl" "$CA/ca0/1.crl" "$CA/ca0/2.crl"
 
     assert_num_files 3 "$1"
     cmp "$1/"*.r2 "$CA/ca0/2.crl" || err "bad cert #0"
@@ -69,13 +69,13 @@ t1() {
 }
 
 t2() {
-    $H "$1" "$CA/ca0/top.crt" "$CA/ca0/l1.crt" "$CA/ca0/l2.crt"
+    $H -R "$1" "$CA/ca0/top.crt" "$CA/ca0/l1.crt" "$CA/ca0/l2.crt"
 
     assert_num_files 3 "$1"
 
     ####
     rm -f "$1/*"
-    $H "$1" "$CA/ca0/"{top,l1,l2,l1-dup}.crt
+    $H -R "$1" "$CA/ca0/"{top,l1,l2,l1-dup}.crt
 
     assert_num_files 4 "$1"
 

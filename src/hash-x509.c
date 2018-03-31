@@ -796,7 +796,8 @@ static bool remove_old_object(int dir_fd, struct dir_object const *o)
 	return true;
 }
 
-static bool emit_object(int dir_fd, struct x509_hash const *hash)
+static bool emit_object(int dir_fd, struct x509_hash const *hash,
+			bool do_remove_old)
 {
 	unsigned int	next_idx;
 
@@ -808,11 +809,13 @@ static bool emit_object(int dir_fd, struct x509_hash const *hash)
 	for (size_t i = 0; i < hash->num_crls; ++i)
 		emit_new_crl(dir_fd, &hash->crls[i], hash, &next_idx);
 
-	for (size_t i = 0; i < hash->num_crls; ++i)
-		remove_old_object(dir_fd, &hash->crls[i].o);
+	if (do_remove_old) {
+		for (size_t i = 0; i < hash->num_crls; ++i)
+			remove_old_object(dir_fd, &hash->crls[i].o);
 
-	for (size_t i = 0; i < hash->num_crts; ++i)
-		remove_old_object(dir_fd, &hash->crts[i].o);
+		for (size_t i = 0; i < hash->num_crts; ++i)
+			remove_old_object(dir_fd, &hash->crts[i].o);
+	}
 
 	return true;
 }
@@ -861,17 +864,25 @@ static void test(void)
 
 int main(int argc, char *argv[])
 {
-	char const	*outdir = argv[1];
+	int		optidx = 1;
+	char const	*outdir;
 	X509_STORE	*store = X509_STORE_new();
 	X509_LOOKUP	*lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
 	STACK_OF(X509_OBJECT)	*store_objects;
 	int		dir_fd;
 	int		lock_fd;
 	int		rc;
+	bool		do_keep_old = true;
 	struct x509_objects	objects = {
 		.list	= NULL,
 		.num	= 0,
 	};
+
+	if (strcmp(argv[optidx], "-R") == 0 ||
+	    strcmp(argv[optidx], "--remove-old") == 0) {
+		do_keep_old = false;
+		++optidx;
+	}
 
 	test();
 
@@ -880,7 +891,10 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	for (int i = 2; i < argc; ++i) {
+	outdir = argv[optidx];
+	++optidx;
+
+	for (int i = optidx; i < argc; ++i) {
 		if (X509_LOOKUP_load_file(lookup, argv[i], X509_LU_X509) < 0 ||
 		    X509_LOOKUP_load_file(lookup, argv[i], X509_LU_CRL) < 0) {
 			fprintf(stderr, "WARNING: failed to add '%s'\n",
@@ -932,6 +946,6 @@ int main(int argc, char *argv[])
 
 	for (size_t i = 0; i < objects.num; ++i) {
 		sort_objects(&objects.list[i]);
-		emit_object(dir_fd, &objects.list[i]);
+		emit_object(dir_fd, &objects.list[i], !do_keep_old);
 	}
 }
