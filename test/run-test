@@ -8,6 +8,11 @@ set -e
 T=`mktemp -t -d hash-x509.XXXXXX`
 trap "rm -rf $T" EXIT
 
+err() {
+    printf "%s\n" "$*" >&2
+    exit 1
+}
+
 assert_num_files() {
     local exp=$1
     local dir=$2
