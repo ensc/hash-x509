@@ -15,8 +15,8 @@ bindir = ${prefix}/bin
 CFLAGS_openssl = $(shell ${PKG_CONFIG} --cflags libcrypto)
 LIBS_openssl = $(shell ${PKG_CONFIG} --libs libcrypto)
 
-CFLAGS = -Wall -W -Werror -D_FORTIFY_SOURCE=2 -O2
-LDFLAGS = -Wl,-as-needed
+CFLAGS  ?= -Wall -W -Werror -D_FORTIFY_SOURCE=2 -O2
+LDFLAGS ?= -Wl,-as-needed
 
 AM_CFLAGS = ${CFLAGS_openssl} -std=gnu99
 LIBS = ${LIBS_openssl}
