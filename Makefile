@@ -21,14 +21,22 @@ LDFLAGS = -Wl,-as-needed
 AM_CFLAGS = ${CFLAGS_openssl} -std=gnu99
 LIBS = ${LIBS_openssl}
 
-bin_PROGRAMS = hash-x509
+bin_PROGRAMS = \
+	hash-x509 \
+	chain-x509 \
 
 hash-x509_SOURCES = \
 	src/hash-x509.c
 
+chain-x509_SOURCES = \
+	src/chain-x509.c
+
 all: ${bin_PROGRAMS}
 
 hash-x509:	${hash-x509_SOURCES}
+	${CC} ${AM_CFLAGS} ${CFLAGS} ${AM_LDFLAGS} ${LDFLAGS} $(filter %.c,$^) -o $@ ${LIBS}
+
+chain-x509:	${chain-x509_SOURCES}
 	${CC} ${AM_CFLAGS} ${CFLAGS} ${AM_LDFLAGS} ${LDFLAGS} $(filter %.c,$^) -o $@ ${LIBS}
 
 check:	${bin_PROGRAMS} | test/.dirstamp
@@ -38,7 +46,8 @@ clean:
 	rm -f ${bin_PROGRAMS}
 
 install:	${bin_PROGRAMS}
-	${INSTALL_BIN} hash-x509 ${DESTDIR}${bindir}/hash-x509
+	${INSTALL_BIN} hash-x509  ${DESTDIR}${bindir}/hash-x509
+	${INSTALL_BIN} chain-x509 ${DESTDIR}${bindir}/chain-x509
 
 test/.dirstamp:
 	mkdir -p ${@D}
